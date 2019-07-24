@@ -1,4 +1,4 @@
-import argparse
+import argparse, json
 parser = argparse.ArgumentParser(prog="Weather Station")
 parser.add_argument('--version', action='version', version='%(prog)s 2.0')
 parser.add_argument("username", help="Username on Adafruit.io", type=str)
@@ -10,6 +10,7 @@ parser.add_argument("--nohumidity", help="Disable collection of the humidity.", 
 parser.add_argument("--nopressure", help="Disable collection of the pressure.", action="store_true")
 parser.add_argument("-u","--unitofmeasure", help="Which unit to calculate temperature in (F or C)", choices=["F","C"], default="F")
 parser.add_argument("-r","--rate", help="Number of seconds between data point collection.",default=300, type=int)
+parser.add_argument("--noserver", help="Disable built in web server. If omitted, data will be served in json format on port 8000.", action="store_true")
 args = parser.parse_args()
 convert_to_F = True if args.unitofmeasure == "F" else False
 if args.notempH and args.notempP and args.nohumidity and args.nopressure:
@@ -18,6 +19,8 @@ if args.notempH and args.notempP and args.nohumidity and args.nopressure:
   quit()
 
 from time import sleep
+import os 
+dir_path = os.path.dirname(os.path.realpath(__file__))
 
 ##### Setup Adafruit_IO Client #####
 from Adafruit_IO import Client, Feed
@@ -38,25 +41,25 @@ sense = SenseHat() #create the sense hat object
 ##### Functions #####
 def ctof(temp):
   return round((temp * 9 / 5) + 32,2)
+json_output = {}
 while True:
-  output = []
   if not args.notempH:
     temp = sense.get_temperature_from_humidity()
     if convert_to_F: temp = ctof(temp)
     aio.send('temp-h',temp)
-    output.append(f"TempH={ctof(temp)-100 if convert_to_F else temp}")
+    json_output['temp'] = temp
   if not args.notempP:
     temp = sense.get_temperature_from_pressure()
     if convert_to_F: temp = ctof(temp)
     aio.send('temp-p',temp)
-    output.append(f"TempP={ctof(temp)-100 if convert_to_F else temp}")
   if not args.nohumidity:
-    humidity = sense.get_humidity()
+    humidity = round(sense.get_humidity(),2)
     aio.send('humidity',humidity)
-    output.append(f"Humidity={round(humidity,2)}")
+    json_output['humidity'] = humidity
   if not args.nopressure:
-    pressure = sense.get_pressure()/1.3332239
+    pressure = round(sense.get_pressure()/1.3332239,2)
     aio.send('pressure',pressure)
-    output.append(f"Pressure={round(pressure,2)}")
-  aio.send('logdata',", ".join(output))
+    json_output['pressure'] = pressure
+  if not args.noserver:
+    with open(dir_path + "/index.html", "w") as f: f.write(json.dumps(json_output) + "\n")
   sleep(args.rate) #wait before getting the next data point
